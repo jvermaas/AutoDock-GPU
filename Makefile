@@ -114,17 +114,27 @@ CONFIG=RELEASE
 
 ifeq ($(CONFIG),FDEBUG)
 	OPT =-O0 -g3 -Wall -DDOCK_DEBUG
-    CUDA_FLAGS = -G -use_fast_math --ptxas-options="-v" -gencode arch=compute_61,code=sm_61 -gencode arch=compute_70,code=sm_70 -std=c++11	
+    CUDA_FLAGS = -G 
 else ifeq ($(CONFIG),LDEBUG)
 	OPT =-O0 -g3 -Wall 
-	CUDA_FLAGS = -use_fast_math --ptxas-options="-v" -gencode arch=compute_61,code=sm_61 -gencode arch=compute_70,code=sm_70 -std=c++11	
+	CUDA_FLAGS = 
 else ifeq ($(CONFIG),RELEASE)
 	OPT =-O3
-	CUDA_FLAGS = -use_fast_math --ptxas-options="-v" -gencode arch=compute_61,code=sm_61 -gencode arch=compute_70,code=sm_70 -std=c++11
+	CUDA_FLAGS = 
 else
 	OPT =
-    CUDA_FLAGS = -use_fast_math --ptxas-options="-v" -gencode arch=compute_61,code=sm_61 -gencode arch=compute_70,code=sm_70 -std=c++11	
+    CUDA_FLAGS = 
 endif
+CUDA_FLAGS += -use_fast_math --ptxas-options="-v" -std=c++11 	-arch=sm_30 \
+ -gencode=arch=compute_30,code=sm_30 \
+ -gencode=arch=compute_35,code=sm_35 \
+ -gencode=arch=compute_50,code=sm_50 \
+ -gencode=arch=compute_52,code=sm_52 \
+ -gencode=arch=compute_60,code=sm_60 \
+ -gencode=arch=compute_61,code=sm_61 \
+ -gencode=arch=compute_70,code=sm_70 \
+ -gencode=arch=compute_75,code=sm_75 \
+ -gencode=arch=compute_75,code=compute_75 
 
 # ------------------------------------------------------
 # Reproduce results (remove randomness)
