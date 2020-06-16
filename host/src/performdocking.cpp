@@ -167,6 +167,7 @@ void setup_gpu_for_docking(GpuData& cData, GpuTempData& tData)
     auto const t1 = std::chrono::steady_clock::now();
     printf("\nCUDA Setup time %fs\n", elapsed_seconds(t0 ,t1));
 	size_t sz_interintra_const	= MAX_NUM_OF_ATOMS*sizeof(float) + 
+					  MAX_NUM_OF_ATOMS*sizeof(uint32_t) +
 					  MAX_NUM_OF_ATOMS*sizeof(uint32_t);
 
 	size_t sz_intracontrib_const	= 3*MAX_INTRAE_CONTRIBUTORS*sizeof(uint32_t);
@@ -302,7 +303,8 @@ int docking_with_gpu(   const Gridinfo*  	mygrid,
                         char**      		argv,
 			            SimulationState&	sim_state,
                         GpuData& cData,
-						GpuTempData& tData)
+						GpuTempData& tData,
+			bool floatgrids_preloaded)
 /* The function performs the docking algorithm and generates the corresponding result files.
 parameter mygrid:
 		describes the grid
@@ -385,14 +387,10 @@ filled with clock() */
 	size_prng_seeds = blocksPerGridForEachEntity * threadsPerBlock * sizeof(unsigned int);
 	cpu_prng_seeds = (unsigned int*) malloc(size_prng_seeds);
 
-	genseed(time(NULL));	//initializing seed generator
+	LocalRNG r;
 
 	for (i=0; i<blocksPerGridForEachEntity*threadsPerBlock; i++)
-#if defined (REPRO)
-		cpu_prng_seeds[i] = 1u;
-#else
-		cpu_prng_seeds[i] = genseed(0u);
-#endif
+		cpu_prng_seeds[i] = r.random_uint();
 
 	//allocating memory in CPU for evaluation counters
 	size_evals_of_runs = mypars->num_of_runs*sizeof(int);
@@ -434,7 +432,8 @@ filled with clock() */
 	}
 
 	size_t sz_interintra_const	= MAX_NUM_OF_ATOMS*sizeof(float) + 
-								  MAX_NUM_OF_ATOMS*sizeof(uint32_t);
+					  MAX_NUM_OF_ATOMS*sizeof(uint32_t) + 
+                                          MAX_NUM_OF_ATOMS*sizeof(uint32_t);
 
 	size_t sz_intracontrib_const	= 3*MAX_INTRAE_CONTRIBUTORS*sizeof(uint32_t);
 
@@ -503,8 +502,10 @@ filled with clock() */
     cData.warpbits = 5;
 
     // Upload data
-    status = cudaMemcpy(tData.pMem_fgrids, cpu_floatgrids, size_floatgrids, cudaMemcpyHostToDevice);
-    RTERROR(status, "pMem_fgrids: failed to upload to GPU memory.\n"); 
+    if(!floatgrids_preloaded){
+    	status = cudaMemcpy(tData.pMem_fgrids, cpu_floatgrids, size_floatgrids, cudaMemcpyHostToDevice);
+    	RTERROR(status, "pMem_fgrids: failed to upload to GPU memory.\n");
+    }
     status = cudaMemcpy(pMem_conformations_current, cpu_init_populations, size_populations, cudaMemcpyHostToDevice);
     RTERROR(status, "pMem_conformations_current: failed to upload to GPU memory.\n"); 
     status = cudaMemcpy(tData.pMem_gpu_evals_of_runs, sim_state.cpu_evals_of_runs.data(), size_evals_of_runs, cudaMemcpyHostToDevice);
@@ -515,6 +516,7 @@ filled with clock() */
 	//preparing parameter struct
 	cData.dockpars.num_of_atoms                 = myligand_reference.num_of_atoms;
 	cData.dockpars.num_of_atypes                = myligand_reference.num_of_atypes;
+	cData.dockpars.num_of_map_atypes	    = mygrid->num_of_map_atypes;
 	cData.dockpars.num_of_intraE_contributors   = ((int) myligand_reference.num_of_intraE_contributors);
 	cData.dockpars.gridsize_x                   = mygrid->size_xyz[0];
 	cData.dockpars.gridsize_y                   = mygrid->size_xyz[1];

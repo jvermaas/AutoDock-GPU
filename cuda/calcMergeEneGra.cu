@@ -203,7 +203,7 @@ __device__ void gpu_calc_energrad(
 		float y = calc_coords[atom_id].y;
 		float z = calc_coords[atom_id].z;
 		float q = cData.pKerconst_interintra->atom_charges_const[atom_id];
-		uint32_t atom_typeid = cData.pKerconst_interintra->atom_types_const[atom_id];
+		uint32_t atom_typeid = cData.pKerconst_interintra->atom_types_map_const[atom_id];
 
 		if ((x < 0) || (y < 0) || (z < 0) || (x >= cData.dockpars.gridsize_x-1)
 				                  || (y >= cData.dockpars.gridsize_y-1)
@@ -321,7 +321,7 @@ __device__ void gpu_calc_energrad(
 		// -------------------------------------------------------------------
 
 		// Capturing electrostatic values
-		atom_typeid = cData.dockpars.num_of_atypes;
+		atom_typeid = cData.dockpars.num_of_map_atypes;
 
 		mul_tmp = atom_typeid*g3<<2; // different atom type id to get charge IA
 		cube[0] = *(grid_value_000+mul_tmp+0);
@@ -399,10 +399,14 @@ __device__ void gpu_calc_energrad(
 	// ================================================
 	// CALCULATING INTRAMOLECULAR GRADIENTS
 	// ================================================
+#ifdef REPRO
+        // Simplest way to ensure random order of atomic addition doesn't make answers irreproducible: use only 1 thread
+        if (threadIdx.x==0) for (uint32_t contributor_counter = 0; contributor_counter < cData.dockpars.num_of_intraE_contributors; contributor_counter+= 1) {
+#else 
 	for (uint32_t contributor_counter = threadIdx.x;
 	              contributor_counter < cData.dockpars.num_of_intraE_contributors;
-	              contributor_counter+= blockDim.x)
-	{
+	              contributor_counter+= blockDim.x) {
+#endif
 		// Storing in a private variable 
 		// the gradient contribution of each contributing atomic pair
 		float priv_gradient_per_intracontributor= 0.0f;
@@ -562,6 +566,9 @@ __device__ void gpu_calc_energrad(
     torque_rot.x = 0.0f;
     torque_rot.y = 0.0f;
     torque_rot.z = 0.0f;
+    float gx = 0.0f;
+    float gy = 0.0f;
+    float gz = 0.0f;    
 	for (uint32_t atom_cnt = threadIdx.x;
 		  atom_cnt < cData.dockpars.num_of_atoms;
 		  atom_cnt+= blockDim.x) {
@@ -570,11 +577,14 @@ __device__ void gpu_calc_energrad(
         r.y = (calc_coords[atom_cnt].y - genrot_movingvec.y) * cData.dockpars.grid_spacing;
         r.z = (calc_coords[atom_cnt].z - genrot_movingvec.z) * cData.dockpars.grid_spacing;
 
-		// Re-using "gradient_inter_*" for total gradient (inter+intra)
+		// Re-using "gradient_inter_*" for total gradient (inter+intra) 
 		float3 force;
 		force.x = gradient[atom_cnt].x;
 		force.y = gradient[atom_cnt].y; 
 		force.z = gradient[atom_cnt].z;
+        gx += force.x;
+        gy += force.y;
+        gz += force.z;
 		float4 tr = cross(r, force);
 		torque_rot.x += tr.x;
         torque_rot.y += tr.y;
@@ -597,15 +607,6 @@ __device__ void gpu_calc_energrad(
 #if defined (DEBUG_ENERGY_KERNEL)
     REDUCEFLOATSUM(intraE, pFloatAccumulator);
 #endif 
-    float gx = 0.0f;
-    float gy = 0.0f;
-    float gz = 0.0f;
-    for (uint32_t idx = threadIdx.x; idx < cData.dockpars.num_of_atoms; idx += blockDim.x)
-    {
-        gx += gradient[idx].x;
-        gy += gradient[idx].y;
-        gz += gradient[idx].z;
-    }
     REDUCEFLOATSUM(gx, pFloatAccumulator);
     REDUCEFLOATSUM(gy, pFloatAccumulator);
     REDUCEFLOATSUM(gz, pFloatAccumulator);
@@ -832,10 +833,12 @@ __device__ void gpu_calc_energrad(
 	// Obtaining torsion-related gradients
 	// ------------------------------------------
 	uint32_t num_torsion_genes = cData.dockpars.num_of_genes-6;
-	for (uint32_t idx = threadIdx.x;
-		  idx < num_torsion_genes * cData.dockpars.num_of_atoms;
-		  idx += blockDim.x) {
-
+#ifdef REPRO
+	// Simplest way to ensure random order of atomic addition doesn't make answers irreproducible: use only 1 thread
+	if (threadIdx.x==0) for (uint32_t idx = 0; idx < num_torsion_genes * cData.dockpars.num_of_atoms; idx += 1) {
+#else
+	for (uint32_t idx = threadIdx.x; idx < num_torsion_genes * cData.dockpars.num_of_atoms; idx += blockDim.x) {
+#endif
 		uint32_t rotable_atom_cnt = idx / num_torsion_genes;
 		uint32_t rotbond_id = idx - rotable_atom_cnt * num_torsion_genes; // this is a bit cheaper than % (modulo)
 

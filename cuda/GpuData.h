@@ -1,5 +1,8 @@
 #ifndef GPUDATADOTH
 #define GPUDATADOTH
+#include <float.h>
+
+static const float MAXENERGY = FLT_MAX / 100.0; // Used to cap absurd energies so placeholder energy is always skipped in sorts
 
 #define RTERROR(status, s) \
     if (status != cudaSuccess) { \
@@ -39,6 +42,7 @@ typedef struct
 {
         int             num_of_atoms;
         int             num_of_atypes;
+	int		num_of_map_atypes;
         int             num_of_intraE_contributors;
         int             gridsize_x;
         int             gridsize_y;
